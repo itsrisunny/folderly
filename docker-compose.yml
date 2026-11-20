@@ -1,0 +1,36 @@
+# Self-hosted stack: MongoDB + API + Web (nginx). Put TLS (Caddy / ALB / Cloudflare) in front of "web".
+# Using MongoDB Atlas instead? Remove the "mongo" service and set MONGO_URI in api/.env.
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes: [mongo_data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    env_file: ./api/.env
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/folderly?authSource=admin
+      TRUST_PROXY: "1"              # one proxy (nginx) in front of the API
+    depends_on:
+      mongo: { condition: service_healthy }
+    expose: ["5000"]
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    ports: ["80:8080"]
+    depends_on: [api]
+
+volumes:
+  mongo_data:
